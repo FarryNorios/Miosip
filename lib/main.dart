@@ -1,5 +1,4 @@
 import "package:flutter/material.dart";
-import "package:flutter/services.dart";
 import "home_page.dart";
 import "music_player.dart";
 
@@ -9,7 +8,6 @@ final RouteObserver<ModalRoute> routeObserver = RouteObserver<ModalRoute>();
 //   WidgetsFlutterBinding.ensureInitialized();
 //   runApp(MyApp());
 // }
-
 late MusicPlayer musicPlayer;
 
 Future<void> main() async {
@@ -51,6 +49,11 @@ class MyApp extends StatelessWidget {
         listTileTheme: ListTileThemeData(
           mouseCursor: WidgetStateProperty.all(SystemMouseCursors.basic),
         ),
+
+        textSelectionTheme: TextSelectionThemeData(
+          selectionColor: Colors.grey,
+          selectionHandleColor: Colors.grey,
+        )
       ),
       home: HomePage(musicPlayer: musicPlayer),
       navigatorObservers: [routeObserver],

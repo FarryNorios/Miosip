@@ -3,32 +3,28 @@ import "dart:math";
 import "dart:convert";
 import "package:path/path.dart";
 import "package:shared_preferences/shared_preferences.dart";
-import "package:permission_handler/permission_handler.dart";
 import "package:lpinyin/lpinyin.dart";
+import "permission_manager.dart";
+import "package:audiotags/audiotags.dart";
+import "package:audio_metadata_reader/audio_metadata_reader.dart";
 
 class Music {
-  final String title;
   final String path;
+  String title;
+  String artist;
 
-  Music({required this.title, required this.path});
+  Music({required this.path, required this.title, required this.artist});
 
   Map<String, dynamic> toMap() {
-    return {"title": title, "path": path};
+    return {"path": path, "title": title, "artist": artist};
   }
 
   factory Music.fromMap(Map<String, dynamic> map) {
-    return Music(title: map["title"], path: map["path"]);
+    return Music(path: map["path"], title: map["title"], artist: map["artist"]);
   }
 }
 
 final List<String> supportedExtensions = [".mp3", ".flac", ".wav"];
-
-//获取文件权限
-Future<void> requestPermission() async {
-  try {
-    await Permission.audio.request();
-  } catch (e) {}
-}
 
 //获取音乐存储的文件夹列表
 Future<List<String>> loadMusicFoldersList() async {
@@ -43,9 +39,10 @@ Future<void> saveMusicFoldersList(List<String> musicFoldersList) async {
 }
 
 //扫描音乐文件列表
-Future<List<Music>> scanMusicFiles() async {
+Future<List<String>> scanMusicFiles() async {
+  await checkAudioPermission();
   final List<String> musicFoldersList = await loadMusicFoldersList();
-  List<Music> musicFiles = [];
+  List<String> musicFiles = [];
   for (String folder in musicFoldersList) {
     final dir = Directory(folder);
     if (await dir.exists()) {
@@ -57,27 +54,46 @@ Future<List<Music>> scanMusicFiles() async {
             final ext = entity.path.split(".").last.toLowerCase();
             //目标文件判断过滤
             if (supportedExtensions.contains(".$ext")) {
-              musicFiles.add(
-                Music(
-                  title: basenameWithoutExtension(entity.path),
-                  path: entity.path,
-                ),
-              );
+              // Tag? tags = await readTags(entity.path);
+              musicFiles.add(entity.path);
             }
           }
         }
       }
     }
   }
-  print("scaned music list");
+  print("Scaned music list");
   return musicFiles;
+}
+
+List<Music> handleMusicFiles(List<String> musicFiles, List<Music> musicList) {
+  List<Music> newMusicList = [];
+  for (String musicFile in musicFiles) {
+    Music music = musicList.firstWhere(
+      (music) => music.path == musicFile,
+      orElse:
+          () => Music(
+            path: musicFile,
+            title: basenameWithoutExtension(musicFile),
+            artist: "",
+          ),
+    );
+    newMusicList.add(music);
+  }
+  return newMusicList;
 }
 
 Future<List<Music>> loadMusicList() async {
   final prefs = await SharedPreferences.getInstance();
   final jsonString = prefs.getString("musicList") ?? "[]";
   final jsonList = json.decode(jsonString) as List;
-  return jsonList.map((json) => Music.fromMap(json)).toList();
+  try {
+    return jsonList.map((json) => Music.fromMap(json)).toList();
+  } catch (e) {
+    print("Error loading music list: $e");
+    await clearMusicList();
+    return [];
+  }
 }
 
 Future<void> saveMusicList(List<Music> musicList) async {
@@ -85,6 +101,13 @@ Future<void> saveMusicList(List<Music> musicList) async {
   final jsonList = musicList.map((music) => music.toMap()).toList();
   final jsonString = json.encode(jsonList);
   await prefs.setString("musicList", jsonString);
+  print("Saved music list");
+}
+
+Future<void> clearMusicList() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove("musicList");
+  print("Cleared music list");
 }
 
 Future<int> loadSortMode() async {
@@ -202,4 +225,33 @@ bool isChineseChar(String char) {
 bool isEnglishChar(String char) {
   int code = char.codeUnitAt(0);
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+Future<Tag?> readTags(String path) async {
+  try {
+    return await AudioTags.read(path);
+  } catch (e) {
+    try {
+      final metadata = await readMetadata(File(path), getImage: false);
+      final tags = Tag(
+        title: metadata.title ?? basenameWithoutExtension(path),
+        trackArtist: metadata.artist ?? "Unknown",
+        pictures: List.empty(),
+      );
+      print(
+        "Using AudioTags to read $path tags failed but using AudioMetadataReader to read succeeded.",
+      );
+      return tags;
+    } catch (e) {
+      print("Read $path tags failed: $e, returning null.");
+      return null;
+    }
+  }
+}
+
+Future<void> saveTags(String path, String title, String artist) async {
+  await AudioTags.write(
+    path,
+    Tag(title: title, trackArtist: artist, pictures: List.empty()),
+  );
 }

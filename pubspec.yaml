@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.1+2
 
 flutter_launcher_icons:
   image_path: "assets/icon.png"
@@ -32,12 +32,17 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  audio_metadata_reader: ^1.4.2
   audio_service: ^0.18.18
   audioplayers: ^6.5.0
+  audiotags: ^1.4.5
   file_picker: ^10.2.0
   flutter:
     sdk: flutter
   flutter_launcher_icons: ^0.14.4
+  fluttertoast: ^8.2.12
+  html: ^0.15.6
+  http: ^1.4.0
   just_audio: ^0.10.4
   lpinyin: ^2.0.3
   marquee: ^2.3.0

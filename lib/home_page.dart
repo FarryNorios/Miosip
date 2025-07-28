@@ -2,12 +2,16 @@ import "dart:async";
 
 import "package:flutter/material.dart";
 import "package:miosip/main.dart";
+import "package:miosip/permission_manager.dart";
+import "package:fluttertoast/fluttertoast.dart";
 
 import "data_manager.dart";
 import "settings_page.dart";
+import "toolbox_page.dart";
 import "player_bar.dart";
 import "music_player.dart";
-import "AutoScrollText.dart";
+import "auto_scroll_text.dart";
+import "online_manager.dart";
 
 class HomePage extends StatefulWidget {
   final MusicPlayer musicPlayer;
@@ -19,38 +23,32 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> with RouteAware {
-  List<Music> musicList = [];
+  // List<Music> musicList = [];
 
-  int sortMode = 1;
+  // int sortMode = 1;
 
   int? currentMusicIndex;
   String? currentMusicTitle;
   //String? currentMusicPath;
 
+  late StreamSubscription musicListSubscription;
   late StreamSubscription indexSubscription;
 
   @override
   void initState() {
     super.initState();
-    (() async {
-      // await player.initAudioHandler();
-      //先获取权限
-      requestPermission();
-      //读取已经保存的列表信息
-      musicList = await loadMusicList();
-      setState(() {});
-      sortMode = await loadSortMode();
-      //扫描音乐文件并排序，给出新列表
-      musicList = sortMusicList(await scanMusicFiles(), sortMode);
-      musicPlayer.setMusicList(musicList);
-      setState(() {});
-      await saveMusicList(musicList);
-    })();
-    indexSubscription = musicPlayer.currentIndexStream.listen((index) {
+    musicListSubscription = musicPlayer.musicListStream.listen((musicList) {
+      setState(() {
+        if (currentMusicIndex == null) {
+          return;
+        }
+      });
+    });
+    indexSubscription = musicPlayer.indexStream.listen((index) {
       if (currentMusicIndex != index) {
         setState(() {
           currentMusicIndex = index;
-          currentMusicTitle = musicList[index].title;
+          currentMusicTitle = musicPlayer.currentMusicTitle;
         });
       }
     });
@@ -65,13 +63,13 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   @override
   void didPopNext() {
-    (() async {
-      sortMode == await loadSortMode();
-      musicList = sortMusicList(await scanMusicFiles(), sortMode);
-      musicPlayer.setMusicList(musicList);
-      setState(() {});
-      await saveMusicList(musicList);
-    })();
+    // (() async {
+    //   sortMode == await loadSortMode();
+    //   musicList = sortMusicList(await scanMusicFiles(), sortMode);
+    //   musicPlayer.setMusicList(musicList);
+    //   setState(() {});
+    //   await saveMusicList(musicList);
+    // })();
   }
 
   @override
@@ -79,6 +77,7 @@ class HomePageState extends State<HomePage> with RouteAware {
     //取消订阅路由变化
     routeObserver.unsubscribe(this);
     musicPlayer.dispose();
+    musicListSubscription.cancel();
     indexSubscription.cancel();
     super.dispose();
   }
@@ -92,41 +91,30 @@ class HomePageState extends State<HomePage> with RouteAware {
             SizedBox(width: 10),
             Image.asset("assets/logo.png", fit: BoxFit.contain, height: 50),
             SizedBox(width: 5),
-            Text(
-              "Miosip",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-            ),
+            Text("Miosip", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
           ],
         ),
 
         actions: [
-          PopupMenuButton(
+          PopupMenuButton<String>(
             icon: Icon(Icons.keyboard_control, size: 30),
-
+            menuPadding: EdgeInsets.zero,
             itemBuilder:
-                (BuildContext context) => <PopupMenuEntry<String>>[
+                (context) => [
                   PopupMenuItem(
                     value: "settings",
                     child: Row(
-                      children: [
-                        Icon(Icons.settings_rounded),
-                        SizedBox(width: 10),
-                        Text("设置"),
-                      ],
+                      children: [Icon(Icons.settings_rounded), SizedBox(width: 10), Text("设置")],
                     ),
                   ),
 
                   PopupMenuItem(
-                    value: "refresh",
+                    value: "toolbox",
                     child: Row(
                       children: [
-                        //icon有点偏上了，没和字对齐
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Icon(Icons.replay_circle_filled_rounded),
-                        ),
+                        Icon(Icons.build_circle_rounded),
                         SizedBox(width: 10),
-                        Text("刷新"),
+                        Text("工具箱"),
                       ],
                     ),
                   ),
@@ -134,32 +122,29 @@ class HomePageState extends State<HomePage> with RouteAware {
                   PopupMenuItem(
                     value: "sort",
                     child: Row(
+                      children: [Icon(Icons.sort_rounded), SizedBox(width: 10), Text("排序")],
+                    ),
+                  ),
+
+                  PopupMenuItem(
+                    value: "refresh",
+                    child: Row(
                       children: [
-                        Icon(Icons.sort_rounded),
+                        Icon(Icons.replay_circle_filled_rounded),
                         SizedBox(width: 10),
-                        Text("排序"),
+                        Text("刷新"),
                       ],
                     ),
                   ),
                 ],
 
-            onSelected: (String value) {
+            onSelected: (value) {
               switch (value) {
                 case "settings":
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => SettingsPage()),
-                  );
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsPage()));
                   break;
-                case "refresh":
-                  (() async {
-                    sortMode == await loadSortMode();
-                    musicList = sortMusicList(await scanMusicFiles(), sortMode);
-                    musicPlayer.setMusicList(musicList);
-                    setState(() {});
-                    await saveMusicList(musicList);
-                  })();
-                  break;
+                case "toolbox":
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => ToolboxPage()));
                 case "sort":
                   showModalBottomSheet(
                     context: context,
@@ -169,44 +154,26 @@ class HomePageState extends State<HomePage> with RouteAware {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 0,
-                                vertical: 15,
-                              ),
+                              padding: EdgeInsets.symmetric(horizontal: 0, vertical: 15),
                               child: Text(
                                 "排序方式",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
                               ),
                             ),
                             ListTile(
-                              title: Text(
-                                "按名称排序(先英后中)",
-                                textAlign: TextAlign.center,
-                              ),
+                              title: Text("按名称排序(先英后中)", textAlign: TextAlign.center),
                               onTap: () async {
-                                sortMode = 1;
-                                musicList = sortMusicList(musicList, sortMode);
-                                musicPlayer.setMusicList(musicList);
+                                musicPlayer.changeSortMode(1);
                                 setState(() {});
                                 Navigator.pop(context); // 关闭弹窗
-                                await saveSortMode(1);
                               },
                             ),
                             ListTile(
-                              title: Text(
-                                "按名称排序(先中后英)",
-                                textAlign: TextAlign.center,
-                              ),
+                              title: Text("按名称排序(先中后英)", textAlign: TextAlign.center),
                               onTap: () async {
-                                sortMode = 2;
-                                musicList = sortMusicList(musicList, sortMode);
-                                musicPlayer.setMusicList(musicList);
+                                musicPlayer.changeSortMode(2);
                                 setState(() {});
-                                Navigator.pop(context);
-                                await saveSortMode(2);
+                                Navigator.pop(context); // 关闭弹窗
                               },
                             ),
                             // ListTile(
@@ -234,16 +201,23 @@ class HomePageState extends State<HomePage> with RouteAware {
                     },
                   );
                   break;
+                case "refresh":
+                  (() async {
+                    musicPlayer.refreshMusicList();
+                    setState(() {});
+                  })();
+                  break;
               }
             },
           ),
+          SizedBox(width: 10),
         ],
 
         //backgroundColor: const Color.fromARGB(255, 241, 249, 255),
       ),
 
       body: ListView.separated(
-        itemCount: musicList.length,
+        itemCount: musicPlayer.musicList.length,
 
         // padding: const EdgeInsets.only(bottom: 25),
 
@@ -260,34 +234,63 @@ class HomePageState extends State<HomePage> with RouteAware {
         itemBuilder: (context, index) {
           return ListTile(
             dense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 15),
+            contentPadding: EdgeInsets.only(left: 15, right: 10),
             tileColor:
                 (currentMusicIndex == index)
                     ? const Color.fromARGB(255, 245, 245, 245)
                     : Colors.white,
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(5),
-              child: Image.asset(
-                "assets/NoMusicCover-ldpi.png",
-                width: 50,
-                fit: BoxFit.contain,
-              ),
+              child: Image.asset("assets/NoMusicCover-ldpi.png", width: 50, fit: BoxFit.contain),
             ),
-            title: Text(musicList[index].title, style: TextStyle(fontSize: 16), 
+            title: Text(
+              musicPlayer.musicList[index].title,
+              style: TextStyle(fontSize: 16),
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              "Unknown",
+              musicPlayer.musicList[index].artist,
               style: TextStyle(fontSize: 12, color: Colors.grey),
+              overflow: TextOverflow.ellipsis,
             ),
             horizontalTitleGap: 10,
             onTap: () {
               setState(() {
                 currentMusicIndex = index;
-                currentMusicTitle = musicList[index].title;
+                currentMusicTitle = musicPlayer.musicList[index].title;
               });
-              musicPlayer.playMusic(index);
+              (() async {
+                await musicPlayer.playMusic(index);
+              })();
             },
+            trailing: PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert_rounded, size: 20),
+              menuPadding: EdgeInsets.zero,
+              itemBuilder:
+                  (context) => [
+                    PopupMenuItem(
+                      value: "info",
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_rounded, size: 20),
+                          SizedBox(width: 10),
+                          Text("详情"),
+                        ],
+                      ),
+                    ),
+                  ],
+              onSelected: (value) {
+                switch (value) {
+                  case "info":
+                    showDialog(
+                      context: context,
+                      // barrierDismissible: false,  // 禁止点击对话框外部关闭
+                      builder: (context) => MusicInfo(index: index),
+                    );
+                    break;
+                }
+              },
+            ),
           );
         },
       ),
@@ -295,12 +298,276 @@ class HomePageState extends State<HomePage> with RouteAware {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => FullScreenPlayer(player: musicPlayer),
-            ),
+            MaterialPageRoute(builder: (context) => FullScreenPlayer(player: musicPlayer)),
           );
         },
         child: PlayerBar(player: musicPlayer),
+      ),
+    );
+  }
+}
+
+class MusicInfo extends StatefulWidget {
+  final int index;
+
+  const MusicInfo({super.key, required this.index});
+
+  @override
+  State<StatefulWidget> createState() => MusicInfoState();
+}
+
+class MusicInfoState extends State<MusicInfo> {
+  TextEditingController artistEditingController = TextEditingController();
+
+  String? newTitle;
+  String? newArtist;
+  int searchedArtistListIndex = 0;
+  List<String> searchedArtistList = [];
+  String? searchedArtist;
+
+  int searchingStatus = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    artistEditingController.text = musicPlayer.musicList[widget.index].artist;
+  }
+
+  @override
+  void dispose() {
+    artistEditingController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text("详情"),
+      contentPadding: EdgeInsets.only(left: 20, right: 20, top: 20),
+      actionsPadding: EdgeInsets.only(left: 12, right: 12, bottom: 10),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextFormField(
+            initialValue: musicPlayer.musicList[widget.index].path,
+            style: TextStyle(color: Colors.grey),
+            readOnly: true,
+            cursorColor: Colors.grey,
+            cursorWidth: 1,
+            decoration: InputDecoration(
+              labelText: "目标",
+              isDense: true,
+              labelStyle: TextStyle(color: Colors.grey),
+              floatingLabelStyle: TextStyle(color: Colors.grey),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+            ),
+          ),
+          SizedBox(height: 15),
+          TextFormField(
+            initialValue: musicPlayer.musicList[widget.index].title,
+            onChanged: (value) => newTitle = value,
+            cursorColor: Colors.grey,
+            cursorWidth: 1,
+            decoration: InputDecoration(
+              labelText: "标题",
+              isDense: true,
+              labelStyle: TextStyle(color: Colors.grey),
+              floatingLabelStyle: TextStyle(color: Colors.black),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black)),
+            ),
+          ),
+          SizedBox(height: 15),
+          TextFormField(
+            controller: artistEditingController,
+            // initialValue: musicPlayer.musicList[widget.index].artist,
+            onChanged: (value) => newArtist = value,
+            cursorColor: Colors.grey,
+            cursorWidth: 1,
+            decoration: InputDecoration(
+              labelText: "艺术家",
+              isDense: true,
+              labelStyle: TextStyle(color: Colors.grey),
+              floatingLabelStyle: TextStyle(color: Colors.black),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black)),
+            ),
+          ),
+          searchedArtistList.isEmpty
+              ? TextButton(
+                child: Text(
+                  searchingStatus == 1 ? "搜索中" : (searchingStatus == 0 ? "在线搜索" : "搜索失败"),
+                  style: TextStyle(
+                    color:
+                        searchingStatus == 1
+                            ? Colors.grey
+                            : (searchingStatus == 0 ? Colors.blue : Colors.red),
+                  ),
+                ),
+                onPressed: () {
+                  if (searchingStatus != 0) {
+                    return;
+                  }
+                  setState(() {
+                    searchingStatus = 1;
+                  });
+                  (() async {
+                    try {
+                      searchedArtistList = await searchMusicArtistOnline(
+                        newTitle ?? musicPlayer.musicList[widget.index].title,
+                      );
+                      print(searchedArtistList);
+                      if (searchedArtistList.isNotEmpty) {
+                        artistEditingController.text = searchedArtistList[searchedArtistListIndex];
+                      } else {
+                        searchingStatus = 2;
+                      }
+                      setState(() {});
+                    } catch (e) {
+                      return;
+                    }
+                  })();
+                  // showDialog(
+                  //   context: context,
+                  //   builder:
+                  //       (context) =>
+                  //           SearchMusicInfo(initTitle: musicPlayer.musicList[widget.index].title),
+                  // );
+                },
+              )
+              : Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.keyboard_arrow_left_rounded, size: 25),
+                    onPressed: () {
+                      setState(() {
+                        if (searchedArtistListIndex == 0) {
+                          return;
+                        }
+                        searchedArtistListIndex -= 1;
+                        artistEditingController.text = searchedArtistList[searchedArtistListIndex];
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.keyboard_arrow_right_rounded, size: 25),
+                    onPressed: () {
+                      setState(() {
+                        if (searchedArtistListIndex == searchedArtistList.length - 1) {
+                          return;
+                        }
+                        searchedArtistListIndex += 1;
+                        artistEditingController.text = searchedArtistList[searchedArtistListIndex];
+                      });
+                    },
+                  ),
+                ],
+              ),
+        ],
+      ),
+      actions: [
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(foregroundColor: Colors.grey),
+                child: Text("取消", style: TextStyle(fontSize: 16)),
+              ),
+            ),
+            Expanded(
+              child: TextButton(
+                onPressed: () {
+                  (() async {
+                    newArtist = artistEditingController.text;
+                    // if (!await checkWritingPermission()) {
+                    //   Navigator.pop(context);
+                    //   return;
+                    // }
+                    // if (newArtist == "") {
+                    //   newArtist = "Unknown";
+                    // }
+                    if (newTitle == "") {
+                      Fluttertoast.showToast(msg: "标题不能为空");
+                      Navigator.pop(context);
+                      return;
+                    }
+                    if (newTitle == musicPlayer.musicList[widget.index].title) {
+                      if (newArtist == null ||
+                          newArtist == musicPlayer.musicList[widget.index].artist) {
+                        Navigator.pop(context);
+                        return;
+                      }
+                      print("newTitle: $newTitle, newArtist: $newArtist");
+                      Navigator.pop(context);
+                      musicPlayer.changeMusicInfo(widget.index, newTitle, newArtist);
+                      return;
+                    }
+                    if (musicPlayer.musicList.any((music) => music.title == newTitle)) {
+                      Fluttertoast.showToast(msg: "标题已存在");
+                      return;
+                    }
+                    print("newTitle: $newTitle, newArtist: $newArtist");
+                    Navigator.pop(context);
+                    musicPlayer.changeMusicInfo(widget.index, newTitle, newArtist);
+                    // saveTags(
+                    //   musicList[index].path,
+                    //   newTitle,
+                    //   newArtist,
+                    // );
+                  })();
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.blue,
+                  // padding: EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: Text("确定", style: TextStyle(fontSize: 16)),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class SearchMusicInfo extends StatefulWidget {
+  final String initTitle;
+
+  const SearchMusicInfo({super.key, required this.initTitle});
+
+  @override
+  State<StatefulWidget> createState() => SearchMusicInfoState();
+}
+
+class SearchMusicInfoState extends State<SearchMusicInfo> {
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      contentPadding: EdgeInsets.only(left: 20, right: 20, top: 20),
+      actionsPadding: EdgeInsets.only(left: 12, right: 12, bottom: 10),
+      title: Text("在线搜索"),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextFormField(
+            initialValue: widget.initTitle,
+            onChanged: (value) => {},
+            cursorColor: Colors.grey,
+            cursorWidth: 1,
+            decoration: InputDecoration(
+              labelText: "",
+              isDense: true,
+              labelStyle: TextStyle(color: Colors.grey),
+              floatingLabelStyle: TextStyle(color: Colors.black),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -337,7 +604,7 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
     duration = player.currentDuration ?? Duration.zero;
     position = player.currentPosition ?? Duration.zero;
 
-    indexSubscription = player.currentIndexStream.listen((data) {
+    indexSubscription = player.indexStream.listen((data) {
       setState(() {
         title = player.currentMusicTitle;
       });
@@ -389,8 +656,8 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                   onPressed: () {
                     Navigator.pop(context);
                   },
-                )
-              ) 
+                ),
+              ),
             ),
             Expanded(
               child: Column(
@@ -399,11 +666,7 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                   SizedBox(height: 25),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(15),
-                    child: Image.asset(
-                      "assets/NoMusicCover.png",
-                      fit: BoxFit.contain,
-                      width: 300,
-                    ),
+                    child: Image.asset("assets/NoMusicCover.png", fit: BoxFit.contain, width: 300),
                   ),
                   SizedBox(height: 50),
                   Column(
@@ -413,10 +676,7 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                         height: 50,
                         child: AutoScrollText(
                           text: player.currentMusicTitle ?? "",
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
                           velocity: 30,
                         ),
                       ),
@@ -424,7 +684,7 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                         width: 300,
                         height: 50,
                         child: AutoScrollText(
-                          text: "Unknown",
+                          text: player.currentMusicArtist ?? "",
                           style: TextStyle(fontSize: 16, color: Colors.grey),
                           velocity: 30,
                         ),
@@ -441,33 +701,13 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                             SliderTheme(
                               data: SliderThemeData(
                                 trackHeight: 5,
-                                thumbShape: RoundSliderThumbShape(
-                                  enabledThumbRadius: 7,
-                                ),
-                                overlayShape: RoundSliderOverlayShape(
-                                  overlayRadius: 15,
-                                ),
-                                thumbColor: const Color.fromARGB(
-                                  255,
-                                  85,
-                                  85,
-                                  85,
-                                ),
-                                activeTrackColor: const Color.fromARGB(
-                                  255,
-                                  85,
-                                  85,
-                                  85,
-                                ),
+                                thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
+                                overlayShape: RoundSliderOverlayShape(overlayRadius: 15),
+                                thumbColor: const Color.fromARGB(255, 85, 85, 85),
+                                activeTrackColor: const Color.fromARGB(255, 85, 85, 85),
                                 inactiveTrackColor: Colors.grey[300],
-                                overlayColor: const Color.fromARGB(
-                                  50,
-                                  85,
-                                  85,
-                                  85,
-                                ),
-                                showValueIndicator:
-                                    ShowValueIndicator.always, // 显示当前值标签
+                                overlayColor: const Color.fromARGB(50, 85, 85, 85),
+                                showValueIndicator: ShowValueIndicator.always, // 显示当前值标签
                                 valueIndicatorTextStyle: TextStyle(
                                   color: const Color.fromARGB(255, 85, 85, 85),
                                 ),
@@ -477,16 +717,13 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                                 max: duration.inSeconds.toDouble(),
                                 label:
                                     "${(isDragging ? tempPosition : position).inMinutes}:${((isDragging ? tempPosition : position).inSeconds % 60).toString().padLeft(2, '0')}",
-                                value: (isDragging ? tempPosition : position)
-                                    .inSeconds
+                                value: (isDragging ? tempPosition : position).inSeconds
                                     .toDouble()
                                     .clamp(0, duration.inSeconds.toDouble()),
                                 onChanged: (value) {
                                   setState(() {
                                     isDragging = true;
-                                    tempPosition = Duration(
-                                      seconds: value.toInt(),
-                                    );
+                                    tempPosition = Duration(seconds: value.toInt());
                                   });
                                 },
                                 onChangeEnd: (value) {
@@ -530,9 +767,7 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                           SizedBox(width: 10),
                           IconButton(
                             icon: Icon(
-                              isPlaying ?? false
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
+                              isPlaying ?? false ? Icons.pause_rounded : Icons.play_arrow_rounded,
                               color: const Color.fromARGB(255, 0, 0, 0),
                             ),
                             iconSize: 50,

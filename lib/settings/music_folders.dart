@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:file_picker/file_picker.dart";
 
 import "../data_manager.dart";
+import "package:miosip/permission_manager.dart";
 
 class MusicFoldersWidget extends StatefulWidget {
   const MusicFoldersWidget({super.key});
@@ -79,6 +80,15 @@ class MusicFoldersWidgetState extends State<MusicFoldersWidget> {
                 child: IconButton(
                   icon: Icon(Icons.add_rounded),
                   onPressed: () async {
+                    await checkAudioPermission();
+                    //选择文件夹
+                    //如果没有权限则提示用户
+                    if (musicFoldersList.length >= 10) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text("最多只能添加10个音乐文件夹")));
+                      return;
+                    }
                     String? result =
                         await FilePicker.platform.getDirectoryPath();
                     if (result != null) {

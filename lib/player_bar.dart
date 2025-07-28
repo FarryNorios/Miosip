@@ -1,6 +1,6 @@
 import "package:flutter/material.dart";
 import "package:just_audio/just_audio.dart";
-import "AutoScrollText.dart";
+import "auto_scroll_text.dart";
 import "music_player.dart";
 
 class PlayerBar extends StatelessWidget {
@@ -39,13 +39,28 @@ class PlayerBar extends StatelessWidget {
                   child: Image.asset("assets/NoMusicCover-ldpi.png", width: 50, fit: BoxFit.contain),
                 ),
                 SizedBox(width: 10),
-                SizedBox(
-                  width: 250,
-                  child: AutoScrollText(
-                    text: player.currentMusicTitle ?? "",
-                    style: TextStyle(fontSize: 16),
-                  )
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    SizedBox(
+                      width: 250,
+                      height: 20,
+                      child: AutoScrollText(
+                        text: player.currentMusicTitle ?? "",
+                        style: TextStyle(fontSize: 16),
+                      )
+                    ),
+                    SizedBox(
+                      width: 250,
+                      height: 20,
+                      child: AutoScrollText(
+                        text: player.currentMusicArtist ?? "",
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      )
+                    ),
+                  ],
                 ),
+                
                 Spacer(),
                 IconButton(
                   icon: Icon(
