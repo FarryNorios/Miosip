@@ -25,7 +25,7 @@ class AutoScrollText extends StatelessWidget {
 
         final isOverflow = textPainter.width > constraints.maxWidth;
 
-        return isOverflow
+        return SizedBox(height: textPainter.height, child: isOverflow
             ? Marquee(
               text: text,
               style: style,
@@ -37,7 +37,7 @@ class AutoScrollText extends StatelessWidget {
               // fadingEdgeStartFraction: 0.1,
               // fadingEdgeEndFraction: 0.1,
             )
-            : Text(text, style: style, overflow: TextOverflow.ellipsis);
+            : Text(text, style: style, overflow: TextOverflow.ellipsis));
       },
     );
   }

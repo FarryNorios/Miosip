@@ -121,6 +121,17 @@ Future<void> saveSortMode(int sortMode) async {
   await prefs.setInt("sortMode", sortMode);
 }
 
+Future<int> loadPlayingMode() async {
+  final prefs = await SharedPreferences.getInstance();
+  final saved = prefs.getInt("playingMode") ?? 1;
+  return saved;
+}
+
+Future<void> savePlayingMode(int playingMode) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt("playingMode", playingMode);
+}
+
 List<Music> sortMusicList(List<Music> musicList, int mode) {
   //先分离出三种列表
   List<Music> englishList = [];

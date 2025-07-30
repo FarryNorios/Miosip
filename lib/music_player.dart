@@ -1,4 +1,6 @@
 import "dart:async";
+import "dart:math";
+import "package:flutter/material.dart";
 import "package:just_audio/just_audio.dart";
 import "package:audio_service/audio_service.dart";
 import "data_manager.dart";
@@ -8,8 +10,11 @@ class MusicPlayer {
   late AudioHandler audioHandler;
   List<Music> musicList = [];
   int sortMode = 1;
+  int playingMode = 1;
+  List<int> playingOrder = [];
+  int? playingIndex;
 
-  int? currentIndex;
+  int? currentMusicIndex;
   String? currentMusicTitle;
   String? currentMusicArtist;
   Duration? currentDuration;
@@ -47,7 +52,12 @@ class MusicPlayer {
       musicList = await loadMusicList();
       musicListController.add(musicList);
       sortMode = await loadSortMode();
+      playingMode = await loadPlayingMode();
       musicList = sortMusicList(handleMusicFiles(await scanMusicFiles(), musicList), sortMode);
+      playingOrder = List.generate(musicList.length - 1, (index) => index);
+      if (playingMode == 2) {
+        playingOrder.shuffle();
+      }
       musicListController.add(musicList);
       await saveMusicList(musicList);
     })();
@@ -56,16 +66,33 @@ class MusicPlayer {
   Future<void> changeSortMode(int mode) async {
     sortMode = mode;
     List<Music> newMusicList = sortMusicList(musicList, sortMode);
-    if (currentIndex != null) {
-      currentIndex = newMusicList.indexWhere(
-        (music) => music.path == musicList[currentIndex!].path,
+    if (currentMusicIndex != null) {
+      currentMusicIndex = newMusicList.indexWhere(
+        (music) => music.path == musicList[currentMusicIndex!].path,
       );
-      indexController.add(currentIndex!);
+      indexController.add(currentMusicIndex!);
     }
     musicList = newMusicList;
+    playingOrder = List.generate(musicList.length - 1, (index) => index);
+    if (playingMode == 2) {
+      playingOrder.shuffle();
+    }
     musicListController.add(musicList);
     await saveSortMode(sortMode);
     await saveMusicList(musicList);
+  }
+
+  Future<void> changePlayingMode(int playingMode) async {
+    this.playingMode = playingMode;
+    var newPlayingOrder = List.generate(musicList.length - 1, (index) => index);
+    if (playingMode == 2) {
+      newPlayingOrder.shuffle();
+    }
+    if (currentMusicIndex != null) {
+      playingIndex = newPlayingOrder.indexOf(currentMusicIndex!);
+    }
+    playingOrder = newPlayingOrder;
+    await savePlayingMode(playingMode);
   }
 
   Future<void> refreshMusicList() async {
@@ -74,13 +101,15 @@ class MusicPlayer {
       handleMusicFiles(await scanMusicFiles(), musicList),
       sortMode,
     );
-    if (currentIndex != null) {
-      currentIndex = newMusicList.indexWhere(
-        (music) => music.path == musicList[currentIndex!].path,
+    if (currentMusicIndex != null) {
+      currentMusicIndex = newMusicList.indexWhere(
+        (music) => music.path == musicList[currentMusicIndex!].path,
       );
-      indexController.add(currentIndex!);
+      indexController.add(currentMusicIndex!);
     }
     musicList = newMusicList;
+    playingOrder = List.generate(musicList.length - 1, (i) => i);
+    playingOrder.shuffle();
     musicListController.add(musicList);
     await saveMusicList(musicList);
   }
@@ -93,6 +122,11 @@ class MusicPlayer {
       musicList[index].artist = artist;
     }
     musicListController.add(musicList);
+    if (index == currentMusicIndex) {
+      currentMusicTitle = musicList[index].title;
+      currentMusicArtist = musicList[index].artist;
+      indexController.add(index);
+    }
     await saveMusicList(musicList);
   }
 
@@ -140,10 +174,12 @@ class MusicPlayer {
     await playerInit();
     print("播放音乐: ${musicList[index].title}");
 
-    currentIndex = index;
+    currentMusicIndex = index;
     currentMusicTitle = musicList[index].title;
     currentMusicArtist = musicList[index].artist;
     indexController.add(index);
+
+    playingIndex = playingOrder.indexOf(index);
 
     try {
       await player.setAudioSource(AudioSource.uri(Uri.file(musicList[index].path)));
@@ -189,24 +225,35 @@ class MusicPlayer {
   }
 
   Future<void> playNext() async {
-    if (currentIndex == null || canPlay == false) {
+    if (currentMusicIndex == null || playingIndex == null || canPlay == false) {
       return;
     }
-    if (currentIndex == musicList.length - 1) {
-      await playMusic(0);
+    if (playingIndex == playingOrder.length - 1) {
+      await playMusic(playingOrder[0]);
     } else {
-      await playMusic(currentIndex! + 1);
+      await playMusic(playingOrder[playingIndex! + 1]);
     }
   }
 
   Future<void> playPrevious() async {
-    if (currentIndex == null || canPlay == false) {
+    if (currentMusicIndex == null || playingIndex == null || canPlay == false) {
       return;
     }
-    if (currentIndex == 0) {
-      await playMusic(musicList.length - 1);
-    } else {
-      await playMusic(currentIndex! - 1);
+    switch (playingMode) {
+      case 1:
+        if (currentMusicIndex == 0) {
+          await playMusic(musicList.length - 1);
+        } else {
+          await playMusic(currentMusicIndex! - 1);
+        }
+        break;
+      case 2:
+        if (playingIndex == 0) {
+          await playMusic(playingOrder[playingOrder.length - 1]);
+        } else {
+          await playMusic(playingOrder[playingIndex! - 1]);
+        }
+        break;
     }
   }
 

@@ -1,7 +1,6 @@
 import "dart:async";
 
 import "package:flutter/material.dart";
-import "package:miosip/main.dart";
 import "package:miosip/permission_manager.dart";
 import "package:fluttertoast/fluttertoast.dart";
 
@@ -22,10 +21,15 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> with RouteAware {
+class HomePageState extends State<HomePage> with RouteAware, AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   // List<Music> musicList = [];
 
   // int sortMode = 1;
+
+  late final MusicPlayer musicPlayer;
 
   int? currentMusicIndex;
   String? currentMusicTitle;
@@ -37,6 +41,7 @@ class HomePageState extends State<HomePage> with RouteAware {
   @override
   void initState() {
     super.initState();
+    musicPlayer = widget.musicPlayer;
     musicListSubscription = musicPlayer.musicListStream.listen((musicList) {
       setState(() {
         if (currentMusicIndex == null) {
@@ -54,12 +59,12 @@ class HomePageState extends State<HomePage> with RouteAware {
     });
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    //订阅路由变化
-    routeObserver.subscribe(this, ModalRoute.of(context)!);
-  }
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   //订阅路由变化
+  //   routeObserver.subscribe(this, ModalRoute.of(context)!);
+  // }
 
   @override
   void didPopNext() {
@@ -74,8 +79,8 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   @override
   void dispose() {
-    //取消订阅路由变化
-    routeObserver.unsubscribe(this);
+    // //取消订阅路由变化
+    // routeObserver.unsubscribe(this);
     musicPlayer.dispose();
     musicListSubscription.cancel();
     indexSubscription.cancel();
@@ -84,6 +89,7 @@ class HomePageState extends State<HomePage> with RouteAware {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -285,7 +291,7 @@ class HomePageState extends State<HomePage> with RouteAware {
                     showDialog(
                       context: context,
                       // barrierDismissible: false,  // 禁止点击对话框外部关闭
-                      builder: (context) => MusicInfo(index: index),
+                      builder: (context) => MusicInfo(musicPlayer: musicPlayer, index: index),
                     );
                     break;
                 }
@@ -298,25 +304,28 @@ class HomePageState extends State<HomePage> with RouteAware {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => FullScreenPlayer(player: musicPlayer)),
+            MaterialPageRoute(builder: (context) => FullScreenPlayer(musicPlayer: musicPlayer)),
           );
         },
-        child: PlayerBar(player: musicPlayer),
+        child: PlayerBar(musicPlayer: musicPlayer),
       ),
     );
   }
 }
 
 class MusicInfo extends StatefulWidget {
+  final MusicPlayer musicPlayer;
   final int index;
 
-  const MusicInfo({super.key, required this.index});
+  const MusicInfo({super.key, required this.musicPlayer, required this.index});
 
   @override
   State<StatefulWidget> createState() => MusicInfoState();
 }
 
 class MusicInfoState extends State<MusicInfo> {
+  late final MusicPlayer musicPlayer;
+
   TextEditingController artistEditingController = TextEditingController();
 
   String? newTitle;
@@ -330,6 +339,7 @@ class MusicInfoState extends State<MusicInfo> {
   @override
   void initState() {
     super.initState();
+    musicPlayer = widget.musicPlayer;
     artistEditingController.text = musicPlayer.musicList[widget.index].artist;
   }
 
@@ -574,22 +584,24 @@ class SearchMusicInfoState extends State<SearchMusicInfo> {
 }
 
 class FullScreenPlayer extends StatefulWidget {
-  final MusicPlayer player;
+  final MusicPlayer musicPlayer;
 
-  const FullScreenPlayer({super.key, required this.player});
+  const FullScreenPlayer({super.key, required this.musicPlayer});
 
   @override
   State<FullScreenPlayer> createState() => FullScreenPlayerState();
 }
 
 class FullScreenPlayerState extends State<FullScreenPlayer> {
-  late MusicPlayer player;
+  late MusicPlayer musicPlayer;
   Duration duration = Duration.zero;
   Duration position = Duration.zero;
   Duration tempPosition = Duration.zero;
   bool isDragging = false;
   bool? isPlaying;
-  String? title;
+
+  String? currentMusicTitle;
+  String? currentMusicArtist;
 
   late StreamSubscription indexSubscription;
   late StreamSubscription stateSubscription;
@@ -599,37 +611,41 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
   @override
   void initState() {
     super.initState();
-    player = widget.player;
+    musicPlayer = widget.musicPlayer;
 
-    duration = player.currentDuration ?? Duration.zero;
-    position = player.currentPosition ?? Duration.zero;
+    currentMusicTitle = musicPlayer.currentMusicTitle;
+    currentMusicArtist = musicPlayer.currentMusicArtist;
 
-    indexSubscription = player.indexStream.listen((data) {
+    duration = musicPlayer.currentDuration ?? Duration.zero;
+    position = musicPlayer.currentPosition ?? Duration.zero;
+
+    indexSubscription = musicPlayer.indexStream.listen((data) {
       setState(() {
-        title = player.currentMusicTitle;
+        currentMusicTitle = musicPlayer.musicList[data].title;
+        currentMusicArtist = musicPlayer.musicList[data].artist;
       });
     });
-    stateSubscription = player.playerStateStream.listen((data) {
+    stateSubscription = musicPlayer.playerStateStream.listen((data) {
       setState(() {
         isPlaying = data.playing;
       });
     });
-    durationSubscription = player.durationStream.listen((data) {
+    durationSubscription = musicPlayer.durationStream.listen((data) {
       if (duration != data) {
         setState(() {
           duration = data;
         });
       }
     });
-    positionSubscription = player.positionStream.listen((data) {
+    positionSubscription = musicPlayer.positionStream.listen((data) {
       setState(() {
         position = data;
       });
     });
     if (duration == Duration.zero) {
-      duration = player.currentDuration ?? Duration.zero;
+      duration = musicPlayer.currentDuration ?? Duration.zero;
     }
-    isPlaying ??= player.currentState?.playing ?? false;
+    isPlaying ??= musicPlayer.currentState?.playing ?? false;
   }
 
   @override
@@ -670,21 +686,21 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                   ),
                   SizedBox(height: 50),
                   Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       SizedBox(
                         width: 300,
-                        height: 50,
                         child: AutoScrollText(
-                          text: player.currentMusicTitle ?? "",
+                          text: currentMusicTitle ?? "",
                           style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
                           velocity: 30,
                         ),
                       ),
+                      SizedBox(height: 10),
                       SizedBox(
                         width: 300,
-                        height: 50,
                         child: AutoScrollText(
-                          text: player.currentMusicArtist ?? "",
+                          text: currentMusicArtist ?? "",
                           style: TextStyle(fontSize: 16, color: Colors.grey),
                           velocity: 30,
                         ),
@@ -730,7 +746,7 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                                   setState(() {
                                     isDragging = false;
                                   });
-                                  player.seek(Duration(seconds: value.toInt()));
+                                  musicPlayer.seek(Duration(seconds: value.toInt()));
                                 },
                               ),
                             ),
@@ -752,8 +768,27 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                       ),
                       SizedBox(height: 10),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
+                          SizedBox(width: 5),
+                          IconButton(
+                            icon: Icon(
+                              musicPlayer.playingMode == 2
+                                  ? Icons.shuffle_rounded
+                                  : Icons.repeat_rounded,
+                              color: Colors.black,
+                            ),
+                            iconSize: 30,
+                            onPressed: () {
+                              if (musicPlayer.playingMode == 1) {
+                                musicPlayer.changePlayingMode(2);
+                                setState(() {});
+                              } else {
+                                musicPlayer.changePlayingMode(1);
+                                setState(() {});
+                              }
+                            },
+                          ),
                           IconButton(
                             icon: Icon(
                               Icons.skip_previous_rounded,
@@ -761,10 +796,9 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                             ),
                             iconSize: 45,
                             onPressed: () {
-                              player.playPrevious();
+                              musicPlayer.playPrevious();
                             },
                           ),
-                          SizedBox(width: 10),
                           IconButton(
                             icon: Icon(
                               isPlaying ?? false ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -774,14 +808,13 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                             onPressed: () {
                               if (isPlaying != null) {
                                 if (isPlaying!) {
-                                  player.pause();
+                                  musicPlayer.pause();
                                 } else {
-                                  player.play();
+                                  musicPlayer.play();
                                 }
                               }
                             },
                           ),
-                          SizedBox(width: 10),
                           IconButton(
                             icon: Icon(
                               Icons.skip_next_rounded,
@@ -789,9 +822,11 @@ class FullScreenPlayerState extends State<FullScreenPlayer> {
                             ),
                             iconSize: 45,
                             onPressed: () {
-                              player.playNext();
+                              musicPlayer.playNext();
                             },
                           ),
+                          // IconButton(onPressed: () {}, icon: Icon(Icons.more_vert), iconSize: 30),
+                          SizedBox(width: 65),
                         ],
                       ),
                     ],
