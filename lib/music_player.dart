@@ -109,7 +109,9 @@ class MusicPlayer {
     }
     musicList = newMusicList;
     playingOrder = List.generate(musicList.length - 1, (i) => i);
-    playingOrder.shuffle();
+    if (playingMode == 2) {
+      playingOrder.shuffle();
+    }
     musicListController.add(musicList);
     await saveMusicList(musicList);
   }
